@@ -181,6 +181,37 @@ def initialize_database():
 # 재고 관리 헬퍼 함수들
 # ============================================
 
+def execute_to_dataframe(query, params=None):
+    """Turso에서 쿼리 실행 후 DataFrame 반환 (컬럼명 포함)"""
+    conn = get_db_connection()
+    try:
+        if params:
+            cursor_result = conn.execute(query, params)
+        else:
+            cursor_result = conn.execute(query)
+        
+        # 결과 가져오기
+        rows = cursor_result.fetchall()
+        
+        # 컬럼명 추출 (description 사용)
+        try:
+            columns = [desc[0] for desc in cursor_result.description]
+        except:
+            # description이 없으면 기본 컬럼명
+            columns = None
+        
+        # DataFrame 생성
+        if columns:
+            df = pd.DataFrame(rows, columns=columns)
+        else:
+            df = pd.DataFrame(rows)
+        
+        return df
+    finally:
+        conn.close()
+
+
+
 def get_bean_full_name(origin, product):
     """원산지 + 제품명 조합"""
     return f"{origin} - {product}" if product else origin
@@ -354,18 +385,18 @@ def get_product_bom(product_name, sale_date=None):
 def get_all_master_boms():
     """모든 대표 BOM 목록 조회"""
     conn = get_db_connection()
-    df = pd.read_sql_query("""
+    df = execute_to_dataframe("""
         SELECT id, bom_name, description, effective_date, is_active
         FROM master_boms
         ORDER BY bom_name
-    """, conn)
+    """)
     conn.close()
     return df
 
 def get_all_products():
     """모든 제품 목록 조회 (최신 BOM 이력 포함)"""
     conn = get_db_connection()
-    df = pd.read_sql_query("""
+    df = execute_to_dataframe("""
         SELECT 
             p.id, 
             p.product_name,
@@ -379,7 +410,7 @@ def get_all_products():
         FROM products p
         LEFT JOIN master_boms m ON p.master_bom_id = m.id
         ORDER BY p.product_name
-    """, conn)
+    """)
     conn.close()
     return df
 
@@ -1249,13 +1280,13 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.info("💡 수정할 데이터를 선택하면 자동으로 값이 입력됩니다.")
         
         conn = get_db_connection()
-        purchases_df = pd.read_sql_query("""
+        purchases_df = execute_to_dataframe("""
             SELECT id, purchase_date, origin, product_name, quantity_kg, 
                    unit_price, total_amount, supplier
             FROM green_bean_purchases
             ORDER BY purchase_date DESC
             LIMIT 50
-        """, conn)
+        """)
         conn.close()
         
         if len(purchases_df) > 0:
@@ -1396,12 +1427,12 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.info("💡 배합비를 수정하거나 삭제할 수 있습니다. 제품을 선택하면 자동으로 현재 배합비가 입력됩니다.")
         
         conn = get_db_connection()
-        recipes_df = pd.read_sql_query("""
+        recipes_df = execute_to_dataframe("""
             SELECT product_name, 
                    GROUP_CONCAT(green_bean_origin || ' - ' || green_bean_product || ' (' || blend_ratio || '%)') as recipe
             FROM blend_recipes
             GROUP BY product_name
-        """, conn)
+        """)
         conn.close()
         
         if len(recipes_df) > 0:
@@ -1425,7 +1456,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             
             # 선택한 제품의 현재 배합비 조회
             conn = get_db_connection()
-            current_recipe = pd.read_sql_query("""
+            current_recipe = execute_to_dataframe("""
                 SELECT green_bean_origin, green_bean_product, blend_ratio
                 FROM blend_recipes
                 WHERE product_name = ?
@@ -1542,7 +1573,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             FROM product_sales
             ORDER BY sale_date DESC
             LIMIT 100
-        """, conn)
+        """)
         conn.close()
         
         if len(sales_df) > 0:
@@ -1833,11 +1864,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("🌱 생두 매입 분석")
         
         conn = get_db_connection()
-        purchases_df = pd.read_sql_query("""
+        purchases_df = execute_to_dataframe("""
             SELECT purchase_date, origin, product_name, quantity_kg, unit_price, total_amount, supplier
             FROM green_bean_purchases
             ORDER BY purchase_date
-        """, conn)
+        """)
         conn.close()
         
         if len(purchases_df) > 0:
@@ -1865,11 +1896,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("📦 제품 판매 분석")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_to_dataframe("""
             SELECT sale_date, product_name, quantity_kg, unit_price, total_amount, customer
             FROM product_sales
             ORDER BY sale_date
-        """, conn)
+        """)
         conn.close()
         
         if len(sales_df) > 0:
@@ -1893,11 +1924,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("🧪 배합비 조회")
         
         conn = get_db_connection()
-        recipes_df = pd.read_sql_query("""
+        recipes_df = execute_to_dataframe("""
             SELECT product_name, green_bean_origin, green_bean_product, blend_ratio
             FROM blend_recipes
             ORDER BY product_name, blend_ratio DESC
-        """, conn)
+        """)
         conn.close()
         
         if len(recipes_df) > 0:
@@ -1940,11 +1971,11 @@ elif menu == "📦 재고 관리":
         
         st.markdown("### 🌱 생두 재고")
         conn = get_db_connection()
-        green_inv = pd.read_sql_query("""
+        green_inv = execute_to_dataframe("""
             SELECT bean_origin, bean_product, current_stock_kg, last_updated
             FROM green_bean_inventory
             ORDER BY current_stock_kg DESC
-        """, conn)
+        """)
         conn.close()
         
         if len(green_inv) > 0:
@@ -1974,13 +2005,13 @@ elif menu == "📦 재고 관리":
         st.subheader("📜 재고 이동 이력")
         
         conn = get_db_connection()
-        transactions = pd.read_sql_query("""
+        transactions = execute_to_dataframe("""
             SELECT transaction_date, transaction_type, bean_origin, bean_product, 
                    quantity_kg, notes, created_at
             FROM inventory_transactions
             ORDER BY transaction_date DESC, created_at DESC
             LIMIT 100
-        """, conn)
+        """)
         conn.close()
         
         if len(transactions) > 0:
@@ -2004,10 +2035,10 @@ elif menu == "🔬 배합 계산기":
     
     # 제품 목록 가져오기
     conn = get_db_connection()
-    products = pd.read_sql_query("""
+    products = execute_to_dataframe("""
         SELECT DISTINCT product_name FROM blend_recipes
         ORDER BY product_name
-    """, conn)
+    """)
     
     if len(products) > 0:
         # 제품 선택
@@ -2027,7 +2058,7 @@ elif menu == "🔬 배합 계산기":
         )
         
         # 배합비 조회
-        recipe = pd.read_sql_query("""
+        recipe = execute_to_dataframe("""
             SELECT green_bean_origin, green_bean_product, blend_ratio
             FROM blend_recipes
             WHERE product_name = ?
@@ -2038,7 +2069,7 @@ elif menu == "🔬 배합 계산기":
         green_inv = pd.read_sql_query("""
             SELECT bean_origin, bean_product, current_stock_kg
             FROM green_bean_inventory
-        """, conn)
+        """)
         conn.close()
         
         if len(recipe) > 0:
@@ -2167,13 +2198,13 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.info("💡 수정할 데이터를 선택하면 자동으로 값이 입력됩니다.")
         
         conn = get_db_connection()
-        purchases_df = pd.read_sql_query("""
+        purchases_df = execute_to_dataframe("""
             SELECT id, purchase_date, origin, product_name, quantity_kg, 
                    unit_price, total_amount, supplier
             FROM green_bean_purchases
             ORDER BY purchase_date DESC
             LIMIT 50
-        """, conn)
+        """)
         conn.close()
         
         if len(purchases_df) > 0:
@@ -2314,12 +2345,12 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.info("💡 배합비를 수정하거나 삭제할 수 있습니다. 제품을 선택하면 자동으로 현재 배합비가 입력됩니다.")
         
         conn = get_db_connection()
-        recipes_df = pd.read_sql_query("""
+        recipes_df = execute_to_dataframe("""
             SELECT product_name, 
                    GROUP_CONCAT(green_bean_origin || ' - ' || green_bean_product || ' (' || blend_ratio || '%)') as recipe
             FROM blend_recipes
             GROUP BY product_name
-        """, conn)
+        """)
         conn.close()
         
         if len(recipes_df) > 0:
@@ -2343,7 +2374,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             
             # 선택한 제품의 현재 배합비 조회
             conn = get_db_connection()
-            current_recipe = pd.read_sql_query("""
+            current_recipe = execute_to_dataframe("""
                 SELECT green_bean_origin, green_bean_product, blend_ratio
                 FROM blend_recipes
                 WHERE product_name = ?
@@ -2460,7 +2491,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             FROM product_sales
             ORDER BY sale_date DESC
             LIMIT 100
-        """, conn)
+        """)
         conn.close()
         
         if len(sales_df) > 0:
@@ -2751,11 +2782,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("🌱 생두 매입 분석")
         
         conn = get_db_connection()
-        purchases_df = pd.read_sql_query("""
+        purchases_df = execute_to_dataframe("""
             SELECT purchase_date, origin, product_name, quantity_kg, unit_price, total_amount, supplier
             FROM green_bean_purchases
             ORDER BY purchase_date
-        """, conn)
+        """)
         conn.close()
         
         if len(purchases_df) > 0:
@@ -2783,11 +2814,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("📦 제품 판매 분석")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_to_dataframe("""
             SELECT sale_date, product_name, quantity_kg, unit_price, total_amount, customer
             FROM product_sales
             ORDER BY sale_date
-        """, conn)
+        """)
         conn.close()
         
         if len(sales_df) > 0:
@@ -2811,11 +2842,11 @@ elif menu == "📊 데이터 조회 및 분석":
         st.subheader("🧪 배합비 조회")
         
         conn = get_db_connection()
-        recipes_df = pd.read_sql_query("""
+        recipes_df = execute_to_dataframe("""
             SELECT product_name, green_bean_origin, green_bean_product, blend_ratio
             FROM blend_recipes
             ORDER BY product_name, blend_ratio DESC
-        """, conn)
+        """)
         conn.close()
         
         if len(recipes_df) > 0:
@@ -2858,11 +2889,11 @@ elif menu == "📦 재고 관리":
         
         st.markdown("### 🌱 생두 재고")
         conn = get_db_connection()
-        green_inv = pd.read_sql_query("""
+        green_inv = execute_to_dataframe("""
             SELECT bean_origin, bean_product, current_stock_kg, last_updated
             FROM green_bean_inventory
             ORDER BY current_stock_kg DESC
-        """, conn)
+        """)
         conn.close()
         
         if len(green_inv) > 0:
@@ -2892,13 +2923,13 @@ elif menu == "📦 재고 관리":
         st.subheader("📜 재고 이동 이력")
         
         conn = get_db_connection()
-        transactions = pd.read_sql_query("""
+        transactions = execute_to_dataframe("""
             SELECT transaction_date, transaction_type, bean_origin, bean_product, 
                    quantity_kg, notes, created_at
             FROM inventory_transactions
             ORDER BY transaction_date DESC, created_at DESC
             LIMIT 100
-        """, conn)
+        """)
         conn.close()
         
         if len(transactions) > 0:
@@ -2927,10 +2958,10 @@ elif menu == "💰 손익 분석":
         st.subheader("📊 월별 손익계산서")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_to_dataframe("""
             SELECT sale_date FROM product_sales
             ORDER BY sale_date
-        """, conn)
+        """)
         
         if len(sales_df) > 0:
             sales_df['sale_date'] = pd.to_datetime(sales_df['sale_date'])
