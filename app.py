@@ -2028,23 +2028,146 @@ elif menu == "📦 재고 관리":
     with tab1:
         st.subheader("📊 현재 재고 현황")
         
-        st.markdown("### 🌱 생두 재고")
+        st.markdown("### 🌱 생두 재고 (가중평균 단가 포함)")
         conn = get_db_connection()
+        
+        # 가중평균 단가와 함께 재고 조회
         green_inv = execute_to_dataframe("""
-            SELECT bean_origin, bean_product, current_stock_kg, last_updated
-            FROM green_bean_inventory
-            ORDER BY current_stock_kg DESC
+            SELECT 
+                i.bean_origin,
+                i.bean_product,
+                i.current_stock_kg,
+                i.last_updated,
+                COALESCE(
+                    (SELECT SUM(p.quantity_kg * p.unit_price) / NULLIF(SUM(p.quantity_kg), 0)
+                     FROM green_bean_purchases p
+                     WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product
+                    ), 0
+                ) as weighted_avg_price,
+                (SELECT MAX(purchase_date) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as last_purchase_date,
+                (SELECT MIN(purchase_date) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as first_purchase_date,
+                (SELECT COUNT(*) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as purchase_count
+            FROM green_bean_inventory i
+            WHERE i.current_stock_kg > 0
+            ORDER BY i.current_stock_kg DESC
         """)
         conn.close()
         
         if len(green_inv) > 0:
+            # 품종명 생성
             green_inv['full_name'] = green_inv.apply(
                 lambda row: get_bean_full_name(row['bean_origin'], row['bean_product']), axis=1
             )
             
-            st.dataframe(green_inv[['full_name', 'current_stock_kg', 'last_updated']].style.format({
-                'current_stock_kg': '{:,.1f}'
-            }))
+            # 총 재고 금액 계산
+            green_inv['total_value'] = green_inv['current_stock_kg'] * green_inv['weighted_avg_price']
+            
+            # 표시용 데이터프레임
+            display_df = green_inv[[
+                'full_name', 
+                'current_stock_kg', 
+                'weighted_avg_price', 
+                'total_value',
+                'purchase_count',
+                'first_purchase_date',
+                'last_purchase_date'
+            ]].copy()
+            
+            display_df.columns = [
+                '생두 품종',
+                '현재 재고 (kg)',
+                '가중평균 단가 (원/kg)',
+                '총 재고 금액 (원)',
+                '매입 횟수',
+                '최초 입고일',
+                '최근 입고일'
+            ]
+            
+            # 테이블 표시
+            st.dataframe(
+                display_df.style.format({
+                    '현재 재고 (kg)': '{:,.1f}',
+                    '가중평균 단가 (원/kg)': '{:,.0f}',
+                    '총 재고 금액 (원)': '{:,.0f}',
+                    '매입 횟수': '{:,.0f}'
+                }),
+                use_container_width=True
+            )
+            
+            # 요약 정보
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                total_stock = green_inv['current_stock_kg'].sum()
+                st.metric("총 생두 재고", f"{total_stock:,.1f} kg")
+            with col2:
+                total_value = green_inv['total_value'].sum()
+                st.metric("총 재고 금액", f"{total_value:,.0f} 원")
+            with col3:
+                avg_price = total_value / total_stock if total_stock > 0 else 0
+                st.metric("전체 평균 단가", f"{avg_price:,.0f} 원/kg")
+            
+            # 입고 내역 상세
+            st.markdown("---")
+            st.markdown("#### 📦 입고 내역 상세")
+            
+            selected_bean = st.selectbox(
+                "품종 선택",
+                options=green_inv['full_name'].tolist(),
+                key="inventory_detail_select"
+            )
+            
+            if selected_bean:
+                # 선택된 품종의 정보
+                selected_row = green_inv[green_inv['full_name'] == selected_bean].iloc[0]
+                origin = selected_row['bean_origin']
+                product = selected_row['bean_product']
+                
+                # 해당 품종의 입고 내역 조회
+                purchases = execute_to_dataframe("""
+                    SELECT 
+                        purchase_date as '입고일',
+                        quantity_kg as '수량 (kg)',
+                        unit_price as '단가 (원/kg)',
+                        total_amount as '총액 (원)',
+                        supplier as '공급처'
+                    FROM green_bean_purchases
+                    WHERE origin = ? AND product_name = ?
+                    ORDER BY purchase_date DESC
+                """, [origin, product])
+                
+                if len(purchases) > 0:
+                    st.dataframe(
+                        purchases.style.format({
+                            '수량 (kg)': '{:,.1f}',
+                            '단가 (원/kg)': '{:,.0f}',
+                            '총액 (원)': '{:,.0f}'
+                        }),
+                        use_container_width=True
+                    )
+                    
+                    # 단가 추이 차트
+                    purchases_chart = execute_to_dataframe("""
+                        SELECT purchase_date, unit_price
+                        FROM green_bean_purchases
+                        WHERE origin = ? AND product_name = ?
+                        ORDER BY purchase_date
+                    """, [origin, product])
+                    
+                    if len(purchases_chart) > 0:
+                        fig = px.line(
+                            purchases_chart, 
+                            x='purchase_date', 
+                            y='unit_price',
+                            title=f'{selected_bean} 단가 추이',
+                            labels={'purchase_date': '입고일', 'unit_price': '단가 (원/kg)'}
+                        )
+                        fig.update_traces(mode='lines+markers')
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("입고 내역이 없습니다.")
             
             # 재고 부족 경고
             low_stock = green_inv[green_inv['current_stock_kg'] < 10]
@@ -2056,7 +2179,6 @@ elif menu == "📦 재고 관리":
                        title='생두별 현재 재고량',
                        labels={'full_name': '생두', 'current_stock_kg': '재고량 (kg)'})
             st.plotly_chart(fig, use_container_width=True)
-        else:
             st.info("생두 재고 데이터가 없습니다.")
     
     # 재고 이동 이력
@@ -2964,23 +3086,146 @@ elif menu == "📦 재고 관리":
     with tab1:
         st.subheader("📊 현재 재고 현황")
         
-        st.markdown("### 🌱 생두 재고")
+        st.markdown("### 🌱 생두 재고 (가중평균 단가 포함)")
         conn = get_db_connection()
+        
+        # 가중평균 단가와 함께 재고 조회
         green_inv = execute_to_dataframe("""
-            SELECT bean_origin, bean_product, current_stock_kg, last_updated
-            FROM green_bean_inventory
-            ORDER BY current_stock_kg DESC
+            SELECT 
+                i.bean_origin,
+                i.bean_product,
+                i.current_stock_kg,
+                i.last_updated,
+                COALESCE(
+                    (SELECT SUM(p.quantity_kg * p.unit_price) / NULLIF(SUM(p.quantity_kg), 0)
+                     FROM green_bean_purchases p
+                     WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product
+                    ), 0
+                ) as weighted_avg_price,
+                (SELECT MAX(purchase_date) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as last_purchase_date,
+                (SELECT MIN(purchase_date) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as first_purchase_date,
+                (SELECT COUNT(*) FROM green_bean_purchases p 
+                 WHERE p.origin = i.bean_origin AND p.product_name = i.bean_product) as purchase_count
+            FROM green_bean_inventory i
+            WHERE i.current_stock_kg > 0
+            ORDER BY i.current_stock_kg DESC
         """)
         conn.close()
         
         if len(green_inv) > 0:
+            # 품종명 생성
             green_inv['full_name'] = green_inv.apply(
                 lambda row: get_bean_full_name(row['bean_origin'], row['bean_product']), axis=1
             )
             
-            st.dataframe(green_inv[['full_name', 'current_stock_kg', 'last_updated']].style.format({
-                'current_stock_kg': '{:,.1f}'
-            }))
+            # 총 재고 금액 계산
+            green_inv['total_value'] = green_inv['current_stock_kg'] * green_inv['weighted_avg_price']
+            
+            # 표시용 데이터프레임
+            display_df = green_inv[[
+                'full_name', 
+                'current_stock_kg', 
+                'weighted_avg_price', 
+                'total_value',
+                'purchase_count',
+                'first_purchase_date',
+                'last_purchase_date'
+            ]].copy()
+            
+            display_df.columns = [
+                '생두 품종',
+                '현재 재고 (kg)',
+                '가중평균 단가 (원/kg)',
+                '총 재고 금액 (원)',
+                '매입 횟수',
+                '최초 입고일',
+                '최근 입고일'
+            ]
+            
+            # 테이블 표시
+            st.dataframe(
+                display_df.style.format({
+                    '현재 재고 (kg)': '{:,.1f}',
+                    '가중평균 단가 (원/kg)': '{:,.0f}',
+                    '총 재고 금액 (원)': '{:,.0f}',
+                    '매입 횟수': '{:,.0f}'
+                }),
+                use_container_width=True
+            )
+            
+            # 요약 정보
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                total_stock = green_inv['current_stock_kg'].sum()
+                st.metric("총 생두 재고", f"{total_stock:,.1f} kg")
+            with col2:
+                total_value = green_inv['total_value'].sum()
+                st.metric("총 재고 금액", f"{total_value:,.0f} 원")
+            with col3:
+                avg_price = total_value / total_stock if total_stock > 0 else 0
+                st.metric("전체 평균 단가", f"{avg_price:,.0f} 원/kg")
+            
+            # 입고 내역 상세
+            st.markdown("---")
+            st.markdown("#### 📦 입고 내역 상세")
+            
+            selected_bean = st.selectbox(
+                "품종 선택",
+                options=green_inv['full_name'].tolist(),
+                key="inventory_detail_select"
+            )
+            
+            if selected_bean:
+                # 선택된 품종의 정보
+                selected_row = green_inv[green_inv['full_name'] == selected_bean].iloc[0]
+                origin = selected_row['bean_origin']
+                product = selected_row['bean_product']
+                
+                # 해당 품종의 입고 내역 조회
+                purchases = execute_to_dataframe("""
+                    SELECT 
+                        purchase_date as '입고일',
+                        quantity_kg as '수량 (kg)',
+                        unit_price as '단가 (원/kg)',
+                        total_amount as '총액 (원)',
+                        supplier as '공급처'
+                    FROM green_bean_purchases
+                    WHERE origin = ? AND product_name = ?
+                    ORDER BY purchase_date DESC
+                """, [origin, product])
+                
+                if len(purchases) > 0:
+                    st.dataframe(
+                        purchases.style.format({
+                            '수량 (kg)': '{:,.1f}',
+                            '단가 (원/kg)': '{:,.0f}',
+                            '총액 (원)': '{:,.0f}'
+                        }),
+                        use_container_width=True
+                    )
+                    
+                    # 단가 추이 차트
+                    purchases_chart = execute_to_dataframe("""
+                        SELECT purchase_date, unit_price
+                        FROM green_bean_purchases
+                        WHERE origin = ? AND product_name = ?
+                        ORDER BY purchase_date
+                    """, [origin, product])
+                    
+                    if len(purchases_chart) > 0:
+                        fig = px.line(
+                            purchases_chart, 
+                            x='purchase_date', 
+                            y='unit_price',
+                            title=f'{selected_bean} 단가 추이',
+                            labels={'purchase_date': '입고일', 'unit_price': '단가 (원/kg)'}
+                        )
+                        fig.update_traces(mode='lines+markers')
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("입고 내역이 없습니다.")
             
             # 재고 부족 경고
             low_stock = green_inv[green_inv['current_stock_kg'] < 10]
@@ -2992,7 +3237,6 @@ elif menu == "📦 재고 관리":
                        title='생두별 현재 재고량',
                        labels={'full_name': '생두', 'current_stock_kg': '재고량 (kg)'})
             st.plotly_chart(fig, use_container_width=True)
-        else:
             st.info("생두 재고 데이터가 없습니다.")
     
     # 재고 이동 이력
