@@ -34,6 +34,152 @@ def get_db_connection():
     return conn
 
 # ============================================
+# 데이터베이스 초기화 (최초 1회 실행)
+# ============================================
+
+def initialize_database():
+    """데이터베이스 초기 설정 - 모든 테이블 생성"""
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    tables_sql = [
+        """CREATE TABLE IF NOT EXISTS master_boms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bom_name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            effective_date DATE NOT NULL,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS master_bom_recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            master_bom_id INTEGER NOT NULL,
+            green_bean_origin TEXT NOT NULL,
+            green_bean_product TEXT NOT NULL,
+            blend_ratio REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE CASCADE
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT UNIQUE NOT NULL,
+            master_bom_id INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE SET NULL
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS product_bom_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            master_bom_id INTEGER,
+            effective_date DATE NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE SET NULL
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS green_bean_purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            purchase_date DATE NOT NULL,
+            origin TEXT NOT NULL,
+            product_name TEXT NOT NULL,
+            quantity_kg REAL NOT NULL,
+            unit_price REAL NOT NULL,
+            total_amount REAL NOT NULL,
+            supplier TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS green_bean_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bean_origin TEXT NOT NULL,
+            bean_product TEXT NOT NULL,
+            current_stock_kg REAL DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(bean_origin, bean_product)
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS product_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_date DATE NOT NULL,
+            product_name TEXT NOT NULL,
+            quantity_kg REAL NOT NULL,
+            unit_price REAL NOT NULL,
+            total_amount REAL NOT NULL,
+            customer TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS blend_recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT NOT NULL,
+            green_bean_origin TEXT NOT NULL,
+            green_bean_product TEXT NOT NULL,
+            blend_ratio REAL NOT NULL,
+            effective_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS variable_costs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            cost_per_kg REAL NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(year, month)
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS inventory_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_date DATE NOT NULL,
+            transaction_type TEXT NOT NULL,
+            item_type TEXT NOT NULL,
+            bean_origin TEXT,
+            bean_product TEXT,
+            quantity_kg REAL NOT NULL,
+            reference_id INTEGER,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+    ]
+    
+    indexes_sql = [
+        "CREATE INDEX IF NOT EXISTS idx_green_purchases_date ON green_bean_purchases(purchase_date)",
+        "CREATE INDEX IF NOT EXISTS idx_product_sales_date ON product_sales(sale_date)",
+        "CREATE INDEX IF NOT EXISTS idx_blend_recipes_product ON blend_recipes(product_name)",
+        "CREATE INDEX IF NOT EXISTS idx_master_bom_recipes_bom_id ON master_bom_recipes(master_bom_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_bom_id ON products(master_bom_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_name ON products(product_name)",
+        "CREATE INDEX IF NOT EXISTS idx_product_bom_history_product_date ON product_bom_history(product_id, effective_date DESC)"
+    ]
+    
+    try:
+        # 테이블 생성
+        for sql in tables_sql:
+            cursor.execute(sql)
+        
+        # 인덱스 생성
+        for sql in indexes_sql:
+            cursor.execute(sql)
+        
+        conn.commit()
+        return True, "✅ 데이터베이스 초기화 완료!"
+        
+    except Exception as e:
+        return False, f"❌ 오류: {str(e)}"
+    finally:
+        conn.close()
+
+# ============================================
 # 재고 관리 헬퍼 함수들
 # ============================================
 
@@ -222,6 +368,169 @@ def get_all_products():
     conn.close()
     return df
 
+# ============================================
+# 데이터베이스 초기화 함수
+# ============================================
+
+def initialize_database():
+    """데이터베이스 초기 설정 - 모든 테이블 생성"""
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    tables_sql = [
+        """CREATE TABLE IF NOT EXISTS master_boms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bom_name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            effective_date DATE NOT NULL,
+            is_active BOOLEAN DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS master_bom_recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            master_bom_id INTEGER NOT NULL,
+            green_bean_origin TEXT NOT NULL,
+            green_bean_product TEXT NOT NULL,
+            blend_ratio REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE CASCADE
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT UNIQUE NOT NULL,
+            master_bom_id INTEGER,
+            is_active BOOLEAN DEFAULT 1,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE SET NULL
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS product_bom_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            master_bom_id INTEGER,
+            effective_date DATE NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (master_bom_id) REFERENCES master_boms(id) ON DELETE SET NULL
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS green_bean_purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            purchase_date DATE NOT NULL,
+            origin TEXT NOT NULL,
+            product_name TEXT NOT NULL,
+            quantity_kg REAL NOT NULL,
+            unit_price REAL NOT NULL,
+            total_amount REAL NOT NULL,
+            supplier TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS green_bean_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bean_origin TEXT NOT NULL,
+            bean_product TEXT NOT NULL,
+            current_stock_kg REAL DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(bean_origin, bean_product)
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS product_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_date DATE NOT NULL,
+            product_name TEXT NOT NULL,
+            quantity_kg REAL NOT NULL,
+            unit_price REAL NOT NULL,
+            total_amount REAL NOT NULL,
+            customer TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS blend_recipes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT NOT NULL,
+            green_bean_origin TEXT NOT NULL,
+            green_bean_product TEXT NOT NULL,
+            blend_ratio REAL NOT NULL,
+            effective_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS variable_costs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            cost_per_kg REAL NOT NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(year, month)
+        )""",
+        
+        """CREATE TABLE IF NOT EXISTS inventory_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_date DATE NOT NULL,
+            transaction_type TEXT NOT NULL,
+            item_type TEXT NOT NULL,
+            bean_origin TEXT,
+            bean_product TEXT,
+            quantity_kg REAL NOT NULL,
+            reference_id INTEGER,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+    ]
+    
+    indexes_sql = [
+        "CREATE INDEX IF NOT EXISTS idx_green_purchases_date ON green_bean_purchases(purchase_date)",
+        "CREATE INDEX IF NOT EXISTS idx_product_sales_date ON product_sales(sale_date)",
+        "CREATE INDEX IF NOT EXISTS idx_blend_recipes_product ON blend_recipes(product_name)",
+        "CREATE INDEX IF NOT EXISTS idx_master_bom_recipes_bom_id ON master_bom_recipes(master_bom_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_bom_id ON products(master_bom_id)",
+        "CREATE INDEX IF NOT EXISTS idx_products_name ON products(product_name)",
+        "CREATE INDEX IF NOT EXISTS idx_product_bom_history_product_date ON product_bom_history(product_id, effective_date DESC)"
+    ]
+    
+    try:
+        for sql in tables_sql:
+            cursor.execute(sql)
+        for sql in indexes_sql:
+            cursor.execute(sql)
+        conn.commit()
+        return True, "✅ 데이터베이스 초기화 완료!"
+    except Exception as e:
+        return False, f"❌ 오류: {str(e)}"
+    finally:
+        conn.close()
+
+
+# ============================================
+# 사이드바: 데이터베이스 초기화
+# ============================================
+
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("### 🔧 시스템 설정")
+    
+    if st.button("🚀 데이터베이스 초기화", 
+                 help="최초 1회만 클릭하세요. 모든 테이블을 생성합니다.",
+                 type="primary"):
+        with st.spinner("테이블 생성 중..."):
+            success, message = initialize_database()
+            if success:
+                st.success(message)
+                st.balloons()
+                st.info("새로고침(F5)하면 시스템을 사용할 수 있습니다!")
+            else:
+                st.error(message)
+    
+    st.markdown("---")
 # ============================================
 # 메인 앱
 # ============================================
