@@ -2213,6 +2213,100 @@ elif menu == "📦 재고 관리":
                        labels={'full_name': '생두', 'current_stock_kg': '재고량 (kg)'})
             st.plotly_chart(fig, use_container_width=True)
             st.info("생두 재고 데이터가 없습니다.")
+
+        
+        # 🔧 재고 강제 수정 (관리자 기능)
+        with st.expander("🔧 재고 강제 수정 (매입 데이터 없는 재고 정리)", expanded=False):
+            st.warning("⚠️ 주의: 이 기능은 매입 데이터가 삭제되었지만 재고가 남아있는 경우에만 사용하세요.")
+            
+            conn = get_db_connection()
+            inventory_list = execute_to_dataframe("""
+                SELECT bean_origin, bean_product, current_stock_kg
+                FROM green_bean_inventory
+                WHERE current_stock_kg > 0
+                ORDER BY bean_origin, bean_product
+            """)
+            conn.close()
+            
+            if len(inventory_list) > 0:
+                inventory_list['full_name'] = inventory_list.apply(
+                    lambda row: get_bean_full_name(row['bean_origin'], row['bean_product']), axis=1
+                )
+                
+                st.markdown("#### 현재 재고 목록")
+                st.dataframe(inventory_list[['full_name', 'current_stock_kg']].style.format({
+                    'current_stock_kg': '{:,.1f}'
+                }), use_container_width=True)
+                
+                # 선택
+                selected_bean = st.selectbox(
+                    "수정할 품종 선택",
+                    options=inventory_list['full_name'].tolist(),
+                    key="force_modify_bean"
+                )
+                
+                if selected_bean:
+                    selected_row = inventory_list[inventory_list['full_name'] == selected_bean].iloc[0]
+                    origin = selected_row['bean_origin']
+                    product = selected_row['bean_product']
+                    current_stock = selected_row['current_stock_kg']
+                    
+                    st.info(f"현재 재고: {current_stock:,.1f}kg")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        new_stock = st.number_input(
+                            "새로운 재고량 (kg)",
+                            min_value=0.0,
+                            value=0.0,
+                            step=1.0,
+                            key="new_stock_value"
+                        )
+                    
+                    with col2:
+                        st.write("")
+                        st.write("")
+                        if st.button("재고 강제 수정", type="primary", key="force_modify_btn"):
+                            conn = get_db_connection()
+                            
+                            # 재고 수정
+                            if new_stock == 0:
+                                # 0이면 행 삭제
+                                conn.execute("""
+                                    DELETE FROM green_bean_inventory
+                                    WHERE bean_origin = ? AND bean_product = ?
+                                """, (origin, product))
+                            else:
+                                # 아니면 업데이트
+                                conn.execute("""
+                                    UPDATE green_bean_inventory
+                                    SET current_stock_kg = ?,
+                                        last_updated = CURRENT_TIMESTAMP
+                                    WHERE bean_origin = ? AND bean_product = ?
+                                """, (new_stock, origin, product))
+                            
+                            # 이력 기록
+                            quantity_change = new_stock - current_stock
+                            conn.execute("""
+                                INSERT INTO inventory_transactions
+                                (transaction_date, transaction_type, item_type, 
+                                 bean_origin, bean_product, quantity_kg, notes)
+                                VALUES (date('now'), 'manual_adjustment', 'green_bean',
+                                        ?, ?, ?, '관리자 강제 수정')
+                            """, (origin, product, quantity_change))
+                            
+                            conn.commit()
+                            conn.close()
+                            
+                            st.toast("✅ 재고 수정 완료!", icon="✅")
+                            st.success(f"✅ {selected_bean} 재고를 {new_stock:,.1f}kg으로 수정했습니다.")
+                            st.success(f"📝 변경량: {quantity_change:+.1f}kg")
+                            time.sleep(1)
+                            st.rerun()
+            else:
+                st.info("재고가 없습니다.")
+
     
     # 재고 이동 이력
     with tab2:
