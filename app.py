@@ -34,6 +34,30 @@ def get_db_connection():
     conn = libsql.connect(database=database_url, auth_token=auth_token)
     return conn
 
+
+def execute_query_to_df(conn, query, params=None):
+    """Turso 쿼리 결과를 DataFrame으로 변환"""
+    try:
+        if params:
+            cursor = conn.execute(query, params)
+        else:
+            cursor = conn.execute(query)
+        
+        result = cursor.fetchall()
+        
+        if not result:
+            return pd.DataFrame()
+        
+        # 컬럼명 추출
+        if hasattr(cursor, 'description') and cursor.description:
+            columns = [desc[0] for desc in cursor.description]
+            return pd.DataFrame(result, columns=columns)
+        else:
+            return pd.DataFrame(result)
+    except Exception as e:
+        st.error(f"쿼리 실행 오류: {e}")
+        return pd.DataFrame()
+
 # ============================================
 # 데이터베이스 초기화 (최초 1회 실행)
 # ============================================
@@ -1596,7 +1620,7 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.warning("⚠️ 삭제 시 차감된 생두 재고가 자동으로 복원됩니다.")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_query_to_df(conn, """
             SELECT id, sale_date, product_name, quantity_kg, 
                    unit_price, total_amount, customer
             FROM product_sales
@@ -2098,10 +2122,10 @@ elif menu == "🔬 배합 계산기":
             FROM blend_recipes
             WHERE product_name = ?
             ORDER BY blend_ratio DESC
-        """, conn, params=(selected_product,))
+        """, [selected_product,])
         
         # 생두 재고 조회
-        green_inv = pd.read_sql_query("""
+        green_inv = execute_query_to_df(conn, """
             SELECT bean_origin, bean_product, current_stock_kg
             FROM green_bean_inventory
         """)
@@ -2421,7 +2445,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                 FROM blend_recipes
                 WHERE product_name = ?
                 ORDER BY blend_ratio DESC
-            """, conn, params=(product_to_edit,))
+            """, [product_to_edit,])
             conn.close()
             
             col1, col2 = st.columns(2)
@@ -2532,7 +2556,7 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.warning("⚠️ 삭제 시 차감된 생두 재고가 자동으로 복원됩니다.")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_query_to_df(conn, """
             SELECT id, sale_date, product_name, quantity_kg, 
                    unit_price, total_amount, customer
             FROM product_sales
@@ -3038,7 +3062,7 @@ elif menu == "💰 손익 분석":
                 GROUP BY month
                 ORDER BY month
             """
-            monthly_sales = pd.read_sql_query(sales_query, conn, params=(start_date, end_date))
+            monthly_sales = execute_query_to_df(conn, sales_query, [start_date, end_date])
             
             # 배합비 기반 생두 원가 계산 (1.2 배율 적용!)
             profit_data = []
@@ -3049,12 +3073,12 @@ elif menu == "💰 손익 분석":
                 sales_qty = row['sales_qty']
                 
                 # 해당 월의 판매 제품별 생두 원가 계산
-                month_sales = pd.read_sql_query("""
+                month_sales = execute_query_to_df(conn, """
                     SELECT product_name, SUM(quantity_kg) as qty
                     FROM product_sales
                     WHERE strftime('%Y-%m', sale_date) = ?
                     GROUP BY product_name
-                """, conn, params=(month,))
+                """, [month,])
                 
                 total_bean_cost = 0
                 
@@ -3066,11 +3090,11 @@ elif menu == "💰 손익 분석":
                     green_bean_needed = qty * ROASTING_LOSS_RATE
                     
                     # 배합비 조회
-                    recipe = pd.read_sql_query("""
+                    recipe = execute_query_to_df(conn, """
                         SELECT green_bean_origin, green_bean_product, blend_ratio
                         FROM blend_recipes
                         WHERE product_name = ?
-                    """, conn, params=(product,))
+                    """, [product,])
                     
                     # 각 생두별 원가 계산
                     for _, bean_row in recipe.iterrows():
@@ -3086,7 +3110,7 @@ elif menu == "💰 손익 분석":
                             WHERE origin = ? AND product_name = ?
                             AND purchase_date <= ?
                         """
-                        bean_price = pd.read_sql_query(
+                        bean_price = execute_query_to_df(conn, 
                             bean_price_query, conn, 
                             params=(origin, product_name, f"{month}-31")
                         )['weighted_avg_price'].iloc[0]
@@ -3102,7 +3126,7 @@ elif menu == "💰 손익 분석":
                     ORDER BY effective_month DESC
                     LIMIT 1
                 """
-                var_cost = pd.read_sql_query(
+                var_cost = execute_query_to_df(conn, 
                     variable_cost_query, conn, 
                     params=(f"{month}-01",)
                 )
