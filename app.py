@@ -1452,18 +1452,51 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 삭제하기", key="purchase_delete_btn", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
-                        conn.commit()
-                        conn.close()
                         
-                        # session_state 초기화
-                        if 'selected_purchase_id' in st.session_state:
-                            del st.session_state.selected_purchase_id
+                        # 1단계: 삭제할 데이터 조회 (재고 차감용)
+                        purchase_data = conn.execute("""
+                            SELECT origin, product_name, quantity_kg
+                            FROM green_bean_purchases
+                            WHERE id = ?
+                        """, (selected_id,)).fetchone()
                         
-                        st.toast("✅ 삭제 완료!", icon="✅")
-                        st.success("✅ 삭제 완료!")
-                        time.sleep(1)  # 메시지 표시
-                        st.rerun()
+                        if purchase_data:
+                            origin, product_name, quantity = purchase_data
+                            
+                            # 2단계: 재고 차감
+                            conn.execute("""
+                                UPDATE green_bean_inventory
+                                SET current_stock_kg = current_stock_kg - ?,
+                                    last_updated = CURRENT_TIMESTAMP
+                                WHERE bean_origin = ? AND bean_product = ?
+                            """, (quantity, origin, product_name))
+                            
+                            # 3단계: 재고 이동 이력 기록
+                            conn.execute("""
+                                INSERT INTO inventory_transactions
+                                (transaction_date, transaction_type, item_type, bean_origin, bean_product, 
+                                 quantity_kg, reference_id, notes)
+                                VALUES (date('now'), 'purchase_delete', 'green_bean', ?, ?, ?, ?, 
+                                        '매입 데이터 삭제로 인한 재고 차감')
+                            """, (origin, product_name, -quantity, selected_id))
+                            
+                            # 4단계: 매입 데이터 삭제
+                            conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
+                            conn.commit()
+                            conn.close()
+                            
+                            # session_state 초기화
+                            if 'selected_purchase_id' in st.session_state:
+                                del st.session_state.selected_purchase_id
+                            
+                            st.toast("✅ 삭제 완료!", icon="✅")
+                            st.success("✅ 매입 데이터 삭제 완료!")
+                            st.success(f"📦 {product_name} 재고 {quantity}kg 차감")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            conn.close()
+                            st.error("삭제할 데이터를 찾을 수 없습니다.")
         else:
             st.info("등록된 생두 매입 데이터가 없습니다.")
     
@@ -2136,7 +2169,7 @@ elif menu == "📦 재고 관리":
                     FROM green_bean_purchases
                     WHERE origin = ? AND product_name = ?
                     ORDER BY purchase_date DESC
-                """, [origin, product])
+                """, (origin, product))
                 
                 if len(purchases) > 0:
                     st.dataframe(
@@ -2154,7 +2187,7 @@ elif menu == "📦 재고 관리":
                         FROM green_bean_purchases
                         WHERE origin = ? AND product_name = ?
                         ORDER BY purchase_date
-                    """, [origin, product])
+                    """, (origin, product))
                     
                     if len(purchases_chart) > 0:
                         fig = px.line(
@@ -2510,18 +2543,51 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 삭제하기", key="purchase_delete_btn", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
-                        conn.commit()
-                        conn.close()
                         
-                        # session_state 초기화
-                        if 'selected_purchase_id' in st.session_state:
-                            del st.session_state.selected_purchase_id
+                        # 1단계: 삭제할 데이터 조회 (재고 차감용)
+                        purchase_data = conn.execute("""
+                            SELECT origin, product_name, quantity_kg
+                            FROM green_bean_purchases
+                            WHERE id = ?
+                        """, (selected_id,)).fetchone()
                         
-                        st.toast("✅ 삭제 완료!", icon="✅")
-                        st.success("✅ 삭제 완료!")
-                        time.sleep(1)  # 메시지 표시
-                        st.rerun()
+                        if purchase_data:
+                            origin, product_name, quantity = purchase_data
+                            
+                            # 2단계: 재고 차감
+                            conn.execute("""
+                                UPDATE green_bean_inventory
+                                SET current_stock_kg = current_stock_kg - ?,
+                                    last_updated = CURRENT_TIMESTAMP
+                                WHERE bean_origin = ? AND bean_product = ?
+                            """, (quantity, origin, product_name))
+                            
+                            # 3단계: 재고 이동 이력 기록
+                            conn.execute("""
+                                INSERT INTO inventory_transactions
+                                (transaction_date, transaction_type, item_type, bean_origin, bean_product, 
+                                 quantity_kg, reference_id, notes)
+                                VALUES (date('now'), 'purchase_delete', 'green_bean', ?, ?, ?, ?, 
+                                        '매입 데이터 삭제로 인한 재고 차감')
+                            """, (origin, product_name, -quantity, selected_id))
+                            
+                            # 4단계: 매입 데이터 삭제
+                            conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
+                            conn.commit()
+                            conn.close()
+                            
+                            # session_state 초기화
+                            if 'selected_purchase_id' in st.session_state:
+                                del st.session_state.selected_purchase_id
+                            
+                            st.toast("✅ 삭제 완료!", icon="✅")
+                            st.success("✅ 매입 데이터 삭제 완료!")
+                            st.success(f"📦 {product_name} 재고 {quantity}kg 차감")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            conn.close()
+                            st.error("삭제할 데이터를 찾을 수 없습니다.")
         else:
             st.info("등록된 생두 매입 데이터가 없습니다.")
     
@@ -3194,7 +3260,7 @@ elif menu == "📦 재고 관리":
                     FROM green_bean_purchases
                     WHERE origin = ? AND product_name = ?
                     ORDER BY purchase_date DESC
-                """, [origin, product])
+                """, (origin, product))
                 
                 if len(purchases) > 0:
                     st.dataframe(
@@ -3212,7 +3278,7 @@ elif menu == "📦 재고 관리":
                         FROM green_bean_purchases
                         WHERE origin = ? AND product_name = ?
                         ORDER BY purchase_date
-                    """, [origin, product])
+                    """, (origin, product))
                     
                     if len(purchases_chart) > 0:
                         fig = px.line(
