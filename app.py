@@ -33,6 +33,40 @@ def get_db_connection():
     conn = libsql.connect(database=database_url, auth_token=auth_token)
     return conn
 
+
+# ============================================
+# Turso 호환 헬퍼 함수
+# ============================================
+
+def format_date_for_db(date_obj):
+    """date 객체를 Turso 호환 문자열로 변환"""
+    if date_obj is None:
+        return None
+    if isinstance(date_obj, str):
+        return date_obj
+    return date_obj.strftime('%Y-%m-%d')
+
+def execute_query_to_df(conn, query, params=None):
+    """Turso 쿼리 결과를 DataFrame으로 변환"""
+    if params:
+        result = conn.execute(query, params).fetchall()
+    else:
+        result = conn.execute(query).fetchall()
+    
+    if not result:
+        return pd.DataFrame()
+    
+    # 컬럼명 추출 (description 사용)
+    cursor = conn.execute(query, params) if params else conn.execute(query)
+    columns = [desc[0] for desc in cursor.description] if hasattr(cursor, 'description') else None
+    
+    # DataFrame 생성
+    if columns:
+        return pd.DataFrame(result, columns=columns)
+    else:
+        return pd.DataFrame(result)
+
+
 # ============================================
 # 데이터베이스 초기화 (최초 1회 실행)
 # ============================================
@@ -223,11 +257,11 @@ def update_green_bean_inventory(origin, product, quantity_change):
     conn.execute("""
         SELECT current_stock_kg FROM green_bean_inventory 
         WHERE bean_origin = ? AND bean_product = ?
-    """, (origin, product))
+    """, [origin, product])
     result = conn.execute("""
         SELECT current_stock_kg FROM green_bean_inventory 
         WHERE bean_origin = ? AND bean_product = ?
-    """, (origin, product)).fetchone()
+    """, [origin, product]).fetchone()
     
     if result:
         # 기존 재고 업데이트
@@ -236,13 +270,13 @@ def update_green_bean_inventory(origin, product, quantity_change):
             UPDATE green_bean_inventory 
             SET current_stock_kg = ?, last_updated = CURRENT_TIMESTAMP
             WHERE bean_origin = ? AND bean_product = ?
-        """, (new_stock, origin, product))
+        """, [new_stock, origin, product])
     else:
         # 새로운 생두 추가
         conn.execute("""
             INSERT INTO green_bean_inventory (bean_origin, bean_product, current_stock_kg)
             VALUES (?, ?, ?)
-        """, (origin, product, quantity_change))
+        """, [origin, product, quantity_change])
     
     conn.commit()
     conn.close()
@@ -256,8 +290,8 @@ def add_inventory_transaction(transaction_date, transaction_type, item_type,
         (transaction_date, transaction_type, item_type, bean_origin, bean_product,
          quantity_kg, reference_id, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (transaction_date, transaction_type, item_type, origin, product,
-          quantity_kg, reference_id, notes))
+    """, [transaction_date, transaction_type, item_type, origin, product,
+          quantity_kg, reference_id, notes])
     
     conn.commit()
     conn.close()
@@ -268,11 +302,11 @@ def get_bean_stock(origin, product):
     conn.execute("""
         SELECT current_stock_kg FROM green_bean_inventory 
         WHERE bean_origin = ? AND bean_product = ?
-    """, (origin, product))
+    """, [origin, product])
     result = conn.execute("""
         SELECT current_stock_kg FROM green_bean_inventory 
         WHERE bean_origin = ? AND bean_product = ?
-    """, (origin, product)).fetchone()
+    """, [origin, product]).fetchone()
     conn.close()
     return result[0] if result else 0
 
@@ -287,12 +321,12 @@ def get_master_bom_recipe(master_bom_id):
         SELECT green_bean_origin, green_bean_product, blend_ratio
         FROM master_bom_recipes
         WHERE master_bom_id = ?
-    """, (master_bom_id,))
+    """, [master_bom_id,])
     recipes = conn.execute("""
         SELECT green_bean_origin, green_bean_product, blend_ratio
         FROM master_bom_recipes
         WHERE master_bom_id = ?
-    """, (master_bom_id,)).fetchall()
+    """, [master_bom_id,]).fetchall()
     conn.close()
     return recipes
 
@@ -606,7 +640,7 @@ if menu == "📥 데이터 입력":
                     INSERT INTO green_bean_purchases 
                     (purchase_date, origin, product_name, quantity_kg, unit_price, total_amount, supplier)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (purchase_date, bean_origin, bean_product, quantity, unit_price, total, supplier))
+                """, [purchase_date, bean_origin, bean_product, quantity, unit_price, total, supplier])
                 
                 purchase_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 conn.commit()
@@ -708,7 +742,7 @@ if menu == "📥 데이터 입력":
                     conn.execute("""
                         INSERT INTO master_boms (bom_name, description, effective_date)
                         VALUES (?, ?, ?)
-                    """, (bom_name, description, effective_date))
+                    """, [bom_name, description, effective_date])
                     
                     master_bom_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                     
@@ -718,7 +752,7 @@ if menu == "📥 데이터 입력":
                             INSERT INTO master_bom_recipes 
                             (master_bom_id, green_bean_origin, green_bean_product, blend_ratio)
                             VALUES (?, ?, ?, ?)
-                        """, (master_bom_id, origin, product, ratio))
+                        """, [master_bom_id, origin, product, ratio])
                     
                     conn.commit()
                     st.success(f"✅ 대표 BOM '{bom_name}' 등록 완료!")
@@ -771,7 +805,7 @@ if menu == "📥 데이터 입력":
                         conn.execute("""
                             INSERT INTO products (product_name, notes)
                             VALUES (?, ?)
-                        """, (product_name, notes))
+                        """, [product_name, notes])
                         conn.commit()
                         st.success(f"✅ 제품 '{product_name}' 등록 완료!")
                         st.rerun()
@@ -820,7 +854,7 @@ if menu == "📥 데이터 입력":
                                 conn.execute("""
                                     INSERT INTO products (product_name)
                                     VALUES (?)
-                                """, (str(product_name),))
+                                """, [str(product_name),])
                                 success_count += 1
                             except sqlite3.IntegrityError:
                                 # 이미 존재하는 제품은 건너뛰기
@@ -1184,7 +1218,7 @@ if menu == "📥 데이터 입력":
                                 INSERT INTO product_sales 
                                 (sale_date, product_name, quantity_kg, unit_price, total_amount, customer)
                                 VALUES (?, ?, ?, ?, ?, ?)
-                            """, (sale_date, product, quantity, unit_price, total, customer))
+                            """, [sale_date, product, quantity, unit_price, total, customer])
                             
                             success_count += 1
                             
@@ -1237,10 +1271,10 @@ if menu == "📥 데이터 입력":
             # 기존 데이터 확인
             conn.execute("""
                 SELECT id FROM monthly_costs WHERE year = ? AND month = ?
-            """, (year, month))
+            """, [year, month])
             existing = conn.execute("""
                 SELECT id FROM monthly_costs WHERE year = ? AND month = ?
-            """, (year, month)).fetchone()
+            """, [year, month]).fetchone()
             
             if existing:
                 # 업데이트
@@ -1248,14 +1282,14 @@ if menu == "📥 데이터 입력":
                     UPDATE monthly_costs 
                     SET electricity = ?, water = ?, gas = ?, rent = ?, labor = ?, other = ?
                     WHERE year = ? AND month = ?
-                """, (electricity, water, gas, rent, labor, other, year, month))
+                """, [electricity, water, gas, rent, labor, other, year, month])
                 st.success(f"✅ {year}년 {month}월 변동비 업데이트 완료!")
             else:
                 # 신규 등록
                 conn.execute("""
                     INSERT INTO monthly_costs (year, month, electricity, water, gas, rent, labor, other)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (year, month, electricity, water, gas, rent, labor, other))
+                """, [year, month, electricity, water, gas, rent, labor, other])
                 st.success(f"✅ {year}년 {month}월 변동비 등록 완료!")
             
             conn.commit()
@@ -1394,8 +1428,8 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 SET purchase_date=?, origin=?, product_name=?, 
                                     quantity_kg=?, unit_price=?, total_amount=?, supplier=?
                                 WHERE id=?
-                            """, (new_date, new_origin, new_product, new_quantity, 
-                                  new_unit_price, new_total, new_supplier, selected_id))
+                            """, [new_date, new_origin, new_product, new_quantity, 
+                                  new_unit_price, new_total, new_supplier, selected_id])
                             conn.commit()
                             conn.close()
                             
@@ -1407,7 +1441,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 삭제하기", key="purchase_delete_btn", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
+                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", [selected_id])
                         conn.commit()
                         conn.close()
                         
@@ -1538,7 +1572,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 conn.execute("""
                                     INSERT INTO blend_recipes (product_name, effective_date, green_bean_origin, green_bean_product, blend_ratio)
                                     VALUES (?, ?, ?, ?, ?)
-                                """, (product_to_edit, new_effective_date, origin, product, ratio))
+                                """, [product_to_edit, new_effective_date, origin, product, ratio])
                             
                             conn.commit()
                             conn.close()
@@ -1548,7 +1582,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 배합비 전체 삭제", key="blend_delete", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM blend_recipes WHERE product_name=?", (product_to_edit,))
+                        conn.execute("DELETE FROM blend_recipes WHERE product_name=?", [product_to_edit])
                         conn.commit()
                         conn.close()
                         st.success(f"✅ {product_to_edit} 배합비 삭제 완료!")
@@ -1567,7 +1601,7 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.warning("⚠️ 삭제 시 차감된 생두 재고가 자동으로 복원됩니다.")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_query_to_df(conn, """
             SELECT id, sale_date, product_name, quantity_kg, 
                    unit_price, total_amount, customer
             FROM product_sales
@@ -1628,7 +1662,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                     WHERE product_name = ?
                     AND (effective_date IS NULL OR effective_date <= ?)
                     ORDER BY effective_date DESC
-                """, (record['product_name'], record['sale_date']))
+                """, [record['product_name'], record['sale_date']])
                 
                 recipe_records = conn.execute("""
                     SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -1636,7 +1670,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                     WHERE product_name = ?
                     AND (effective_date IS NULL OR effective_date <= ?)
                     ORDER BY effective_date DESC
-                """, (record['product_name'], record['sale_date'])).fetchall()
+                """, [record['product_name'], record['sale_date']]).fetchall()
                 conn.close()
                 
                 if recipe_records:
@@ -1699,7 +1733,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                         WHERE product_name = ?
                         AND (effective_date IS NULL OR effective_date <= ?)
                         ORDER BY effective_date DESC
-                    """, (new_product, new_date))
+                    """, [new_product, new_date])
                     
                     new_recipe_records = conn.execute("""
                         SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -1707,7 +1741,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                         WHERE product_name = ?
                         AND (effective_date IS NULL OR effective_date <= ?)
                         ORDER BY effective_date DESC
-                    """, (new_product, new_date)).fetchall()
+                    """, [new_product, new_date]).fetchall()
                     conn.close()
                     
                     if new_recipe_records:
@@ -1729,7 +1763,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (record['product_name'], record['sale_date']))
+                            """, [record['product_name'], record['sale_date']])
                             
                             old_recipe_records = conn.execute("""
                                 SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -1737,7 +1771,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (record['product_name'], record['sale_date'])).fetchall()
+                            """, [record['product_name'], record['sale_date']]).fetchall()
                             if old_recipe_records:
                                 old_latest_date = old_recipe_records[0][3]
                                 old_recipe = [r for r in old_recipe_records if r[3] == old_latest_date]
@@ -1760,7 +1794,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (new_product, new_date))
+                            """, [new_product, new_date])
                             
                             new_recipe_records = conn.execute("""
                                 SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -1768,7 +1802,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (new_product, new_date)).fetchall()
+                            """, [new_product, new_date]).fetchall()
                             if new_recipe_records:
                                 new_latest_date = new_recipe_records[0][3]
                                 new_recipe = [r for r in new_recipe_records if r[3] == new_latest_date]
@@ -1791,8 +1825,8 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 SET sale_date=?, product_name=?, quantity_kg=?, 
                                     unit_price=?, total_amount=?, customer=?
                                 WHERE id=?
-                            """, (new_date, new_product, new_quantity, 
-                                  new_unit_price, new_total, new_customer, selected_id))
+                            """, [new_date, new_product, new_quantity, 
+                                  new_unit_price, new_total, new_customer, selected_id])
                             
                             conn.commit()
                             conn.close()
@@ -1812,7 +1846,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                             WHERE product_name = ?
                             AND (effective_date IS NULL OR effective_date <= ?)
                             ORDER BY effective_date DESC
-                        """, (record['product_name'], record['sale_date']))
+                        """, [record['product_name'], record['sale_date']])
                         
                         recipe_records = conn.execute("""
                             SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -1820,7 +1854,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                             WHERE product_name = ?
                             AND (effective_date IS NULL OR effective_date <= ?)
                             ORDER BY effective_date DESC
-                        """, (record['product_name'], record['sale_date'])).fetchall()
+                        """, [record['product_name'], record['sale_date']]).fetchall()
                         if recipe_records:
                             latest_date = recipe_records[0][3]
                             recipe = [r for r in recipe_records if r[3] == latest_date]
@@ -1837,7 +1871,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 )
                         
                         # 2. 판매 데이터 삭제
-                        conn.execute("DELETE FROM product_sales WHERE id=?", (selected_id,))
+                        conn.execute("DELETE FROM product_sales WHERE id=?", [selected_id])
                         
                         conn.commit()
                         conn.close()
@@ -2066,7 +2100,7 @@ elif menu == "🔬 배합 계산기":
         """, conn, params=(selected_product,))
         
         # 생두 재고 조회
-        green_inv = pd.read_sql_query("""
+        green_inv = execute_query_to_df(conn, """
             SELECT bean_origin, bean_product, current_stock_kg
             FROM green_bean_inventory
         """)
@@ -2312,8 +2346,8 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 SET purchase_date=?, origin=?, product_name=?, 
                                     quantity_kg=?, unit_price=?, total_amount=?, supplier=?
                                 WHERE id=?
-                            """, (new_date, new_origin, new_product, new_quantity, 
-                                  new_unit_price, new_total, new_supplier, selected_id))
+                            """, [new_date, new_origin, new_product, new_quantity, 
+                                  new_unit_price, new_total, new_supplier, selected_id])
                             conn.commit()
                             conn.close()
                             
@@ -2325,7 +2359,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 삭제하기", key="purchase_delete_btn", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", (selected_id,))
+                        conn.execute("DELETE FROM green_bean_purchases WHERE id=?", [selected_id])
                         conn.commit()
                         conn.close()
                         
@@ -2456,7 +2490,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 conn.execute("""
                                     INSERT INTO blend_recipes (product_name, effective_date, green_bean_origin, green_bean_product, blend_ratio)
                                     VALUES (?, ?, ?, ?, ?)
-                                """, (product_to_edit, new_effective_date, origin, product, ratio))
+                                """, [product_to_edit, new_effective_date, origin, product, ratio])
                             
                             conn.commit()
                             conn.close()
@@ -2466,7 +2500,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                 with col_delete:
                     if st.button("⚠️ 배합비 전체 삭제", key="blend_delete", type="secondary"):
                         conn = get_db_connection()
-                        conn.execute("DELETE FROM blend_recipes WHERE product_name=?", (product_to_edit,))
+                        conn.execute("DELETE FROM blend_recipes WHERE product_name=?", [product_to_edit])
                         conn.commit()
                         conn.close()
                         st.success(f"✅ {product_to_edit} 배합비 삭제 완료!")
@@ -2485,7 +2519,7 @@ elif menu == "✏️ 데이터 수정/삭제":
         st.warning("⚠️ 삭제 시 차감된 생두 재고가 자동으로 복원됩니다.")
         
         conn = get_db_connection()
-        sales_df = pd.read_sql_query("""
+        sales_df = execute_query_to_df(conn, """
             SELECT id, sale_date, product_name, quantity_kg, 
                    unit_price, total_amount, customer
             FROM product_sales
@@ -2546,7 +2580,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                     WHERE product_name = ?
                     AND (effective_date IS NULL OR effective_date <= ?)
                     ORDER BY effective_date DESC
-                """, (record['product_name'], record['sale_date']))
+                """, [record['product_name'], record['sale_date']])
                 
                 recipe_records = conn.execute("""
                     SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -2554,7 +2588,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                     WHERE product_name = ?
                     AND (effective_date IS NULL OR effective_date <= ?)
                     ORDER BY effective_date DESC
-                """, (record['product_name'], record['sale_date'])).fetchall()
+                """, [record['product_name'], record['sale_date']]).fetchall()
                 conn.close()
                 
                 if recipe_records:
@@ -2617,7 +2651,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                         WHERE product_name = ?
                         AND (effective_date IS NULL OR effective_date <= ?)
                         ORDER BY effective_date DESC
-                    """, (new_product, new_date))
+                    """, [new_product, new_date])
                     
                     new_recipe_records = conn.execute("""
                         SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -2625,7 +2659,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                         WHERE product_name = ?
                         AND (effective_date IS NULL OR effective_date <= ?)
                         ORDER BY effective_date DESC
-                    """, (new_product, new_date)).fetchall()
+                    """, [new_product, new_date]).fetchall()
                     conn.close()
                     
                     if new_recipe_records:
@@ -2647,7 +2681,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (record['product_name'], record['sale_date']))
+                            """, [record['product_name'], record['sale_date']])
                             
                             old_recipe_records = conn.execute("""
                                 SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -2655,7 +2689,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (record['product_name'], record['sale_date'])).fetchall()
+                            """, [record['product_name'], record['sale_date']]).fetchall()
                             if old_recipe_records:
                                 old_latest_date = old_recipe_records[0][3]
                                 old_recipe = [r for r in old_recipe_records if r[3] == old_latest_date]
@@ -2678,7 +2712,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (new_product, new_date))
+                            """, [new_product, new_date])
                             
                             new_recipe_records = conn.execute("""
                                 SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -2686,7 +2720,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 WHERE product_name = ?
                                 AND (effective_date IS NULL OR effective_date <= ?)
                                 ORDER BY effective_date DESC
-                            """, (new_product, new_date)).fetchall()
+                            """, [new_product, new_date]).fetchall()
                             if new_recipe_records:
                                 new_latest_date = new_recipe_records[0][3]
                                 new_recipe = [r for r in new_recipe_records if r[3] == new_latest_date]
@@ -2709,8 +2743,8 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 SET sale_date=?, product_name=?, quantity_kg=?, 
                                     unit_price=?, total_amount=?, customer=?
                                 WHERE id=?
-                            """, (new_date, new_product, new_quantity, 
-                                  new_unit_price, new_total, new_customer, selected_id))
+                            """, [new_date, new_product, new_quantity, 
+                                  new_unit_price, new_total, new_customer, selected_id])
                             
                             conn.commit()
                             conn.close()
@@ -2730,7 +2764,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                             WHERE product_name = ?
                             AND (effective_date IS NULL OR effective_date <= ?)
                             ORDER BY effective_date DESC
-                        """, (record['product_name'], record['sale_date']))
+                        """, [record['product_name'], record['sale_date']])
                         
                         recipe_records = conn.execute("""
                             SELECT green_bean_origin, green_bean_product, blend_ratio, effective_date
@@ -2738,7 +2772,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                             WHERE product_name = ?
                             AND (effective_date IS NULL OR effective_date <= ?)
                             ORDER BY effective_date DESC
-                        """, (record['product_name'], record['sale_date'])).fetchall()
+                        """, [record['product_name'], record['sale_date']]).fetchall()
                         if recipe_records:
                             latest_date = recipe_records[0][3]
                             recipe = [r for r in recipe_records if r[3] == latest_date]
@@ -2755,7 +2789,7 @@ elif menu == "✏️ 데이터 수정/삭제":
                                 )
                         
                         # 2. 판매 데이터 삭제
-                        conn.execute("DELETE FROM product_sales WHERE id=?", (selected_id,))
+                        conn.execute("DELETE FROM product_sales WHERE id=?", [selected_id])
                         
                         conn.commit()
                         conn.close()
@@ -2983,7 +3017,7 @@ elif menu == "💰 손익 분석":
                 GROUP BY month
                 ORDER BY month
             """
-            monthly_sales = pd.read_sql_query(sales_query, conn, params=(start_date, end_date))
+            monthly_sales = execute_query_to_df(conn, sales_query, [start_date, end_date])
             
             # 배합비 기반 생두 원가 계산 (1.2 배율 적용!)
             profit_data = []
@@ -2994,12 +3028,12 @@ elif menu == "💰 손익 분석":
                 sales_qty = row['sales_qty']
                 
                 # 해당 월의 판매 제품별 생두 원가 계산
-                month_sales = pd.read_sql_query("""
+                month_sales = execute_query_to_df(conn, """
                     SELECT product_name, SUM(quantity_kg) as qty
                     FROM product_sales
                     WHERE strftime('%Y-%m', sale_date) = ?
                     GROUP BY product_name
-                """, conn, params=(month,))
+                """, [month,])
                 
                 total_bean_cost = 0
                 
@@ -3011,11 +3045,11 @@ elif menu == "💰 손익 분석":
                     green_bean_needed = qty * ROASTING_LOSS_RATE
                     
                     # 배합비 조회
-                    recipe = pd.read_sql_query("""
+                    recipe = execute_query_to_df(conn, """
                         SELECT green_bean_origin, green_bean_product, blend_ratio
                         FROM blend_recipes
                         WHERE product_name = ?
-                    """, conn, params=(product,))
+                    """, [product,])
                     
                     # 각 생두별 원가 계산
                     for _, bean_row in recipe.iterrows():
@@ -3031,7 +3065,7 @@ elif menu == "💰 손익 분석":
                             WHERE origin = ? AND product_name = ?
                             AND purchase_date <= ?
                         """
-                        bean_price = pd.read_sql_query(
+                        bean_price = execute_query_to_df(conn, 
                             bean_price_query, conn, 
                             params=(origin, product_name, f"{month}-31")
                         )['weighted_avg_price'].iloc[0]
@@ -3047,7 +3081,7 @@ elif menu == "💰 손익 분석":
                     ORDER BY effective_month DESC
                     LIMIT 1
                 """
-                var_cost = pd.read_sql_query(
+                var_cost = execute_query_to_df(conn, 
                     variable_cost_query, conn, 
                     params=(f"{month}-01",)
                 )
