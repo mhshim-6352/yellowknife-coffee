@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+import time
 import plotly.graph_objects as go
 import plotly.express as px
 import libsql_experimental as libsql
@@ -623,8 +624,10 @@ if menu == "📥 데이터 입력":
                     f"매입 - {supplier}"
                 )
                 
+                st.toast("✅ 등록 완료!", icon="✅")
                 st.success(f"✅ 생두 매입 등록 완료! (총액: {total:,.0f}원)")
                 st.success(f"📦 {get_bean_full_name(bean_origin, bean_product)} 재고 {quantity}kg 증가")
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             else:
                 st.error("⚠️ 모든 필수 항목을 입력해주세요.")
@@ -723,7 +726,9 @@ if menu == "📥 데이터 입력":
                         """, (master_bom_id, origin, product, ratio))
                     
                     conn.commit()
+                    st.toast("✅ 등록 완료!", icon="✅")
                     st.success(f"✅ 대표 BOM '{bom_name}' 등록 완료!")
+                    time.sleep(1)  # 메시지 표시
                     st.rerun()
                     
                 except sqlite3.IntegrityError:
@@ -775,7 +780,9 @@ if menu == "📥 데이터 입력":
                             VALUES (?, ?)
                         """, (product_name, notes))
                         conn.commit()
+                        st.toast("✅ 등록 완료!", icon="✅")
                         st.success(f"✅ 제품 '{product_name}' 등록 완료!")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
                     except sqlite3.IntegrityError:
                         st.error(f"⚠️ '{product_name}'은(는) 이미 등록된 제품입니다.")
@@ -831,7 +838,9 @@ if menu == "📥 데이터 입력":
                         conn.commit()
                         conn.close()
                         
+                        st.toast("✅ 등록 완료!", icon="✅")
                         st.success(f"✅ 제품 등록 완료! (신규: {success_count}개, 기존: {skip_count}개)")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
                         
                 except Exception as e:
@@ -960,10 +969,12 @@ if menu == "📥 데이터 입력":
                             
                             conn.commit()
                             conn.close()
+                            st.toast("✅ 완료!", icon="✅")
                             st.success(f"✅ {len(selected_products)}개 제품이 '{selected_bom}'에 연결되었습니다!")
                             st.success(f"📅 적용 시작일: {effective_date_match}")
                             st.info("💡 이 날짜 이전 판매 데이터는 이전 BOM을 사용하고, 이후는 새 BOM을 사용합니다.")
                         
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
             
             else:  # 일괄 매칭 (엑셀)
@@ -1073,6 +1084,7 @@ if menu == "📥 데이터 입력":
                                     for msg in error_messages[:10]:
                                         st.write(msg)
                             
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()
                             
                     except Exception as e:
@@ -1259,10 +1271,12 @@ if menu == "📥 데이터 입력":
                     INSERT INTO monthly_costs (year, month, electricity, water, gas, rent, labor, other)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (year, month, electricity, water, gas, rent, labor, other))
+                st.toast("✅ 등록 완료!", icon="✅")
                 st.success(f"✅ {year}년 {month}월 변동비 등록 완료!")
             
             conn.commit()
             conn.close()
+            time.sleep(1)  # 메시지 표시
             st.rerun()
 
 # 나머지 메뉴들은 기존 코드와 동일하게 유지
@@ -1318,6 +1332,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             # 선택이 변경되었는지 감지
             if selected_id != st.session_state.selected_purchase_id:
                 st.session_state.selected_purchase_id = selected_id
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택된 데이터 가져오기
@@ -1403,7 +1418,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             conn.commit()
                             conn.close()
                             
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success("✅ 수정 완료!")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()
                         else:
                             st.error("⚠️ 모든 필수 항목을 입력해주세요.")
@@ -1419,7 +1436,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                         if 'selected_purchase_id' in st.session_state:
                             del st.session_state.selected_purchase_id
                         
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success("✅ 삭제 완료!")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
         else:
             st.info("등록된 생두 매입 데이터가 없습니다.")
@@ -1456,6 +1475,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             if product_to_edit != st.session_state.selected_product_for_edit:
                 st.session_state.selected_product_for_edit = product_to_edit
                 # 강제 리렌더링으로 새 값 로드
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택한 제품의 현재 배합비 조회
@@ -1547,7 +1567,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             
                             conn.commit()
                             conn.close()
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success(f"✅ {product_to_edit} 배합비 수정 완료! ({new_effective_date}부터 적용)")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()  # 🔧 수정: 페이지 자동 새로고침
                 
                 with col_delete:
@@ -1556,10 +1578,12 @@ elif menu == "✏️ 데이터 수정/삭제":
                         conn.execute("DELETE FROM blend_recipes WHERE product_name=?", (product_to_edit,))
                         conn.commit()
                         conn.close()
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success(f"✅ {product_to_edit} 배합비 삭제 완료!")
                         # session_state 초기화
                         if 'selected_product_for_edit' in st.session_state:
                             del st.session_state.selected_product_for_edit
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()  # 🔧 수정: 페이지 자동 새로고침
         else:
             st.info("등록된 배합비가 없습니다.")
@@ -1607,6 +1631,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             # 선택이 변경되었는지 감지
             if selected_id != st.session_state.selected_sale_id:
                 st.session_state.selected_sale_id = selected_id
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택된 데이터 가져오기
@@ -1803,7 +1828,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             conn.commit()
                             conn.close()
                             
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success("✅ 수정 완료! (생두 재고 재계산됨)")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()
                         else:
                             st.error("⚠️ 모든 필수 항목을 입력해주세요.")
@@ -1852,7 +1879,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                         if 'selected_sale_id' in st.session_state:
                             del st.session_state.selected_sale_id
                         
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success("✅ 삭제 완료! (생두 재고 복원됨)")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
         else:
             st.info("등록된 판매 데이터가 없습니다.")
@@ -2239,6 +2268,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             # 선택이 변경되었는지 감지
             if selected_id != st.session_state.selected_purchase_id:
                 st.session_state.selected_purchase_id = selected_id
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택된 데이터 가져오기
@@ -2324,7 +2354,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             conn.commit()
                             conn.close()
                             
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success("✅ 수정 완료!")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()
                         else:
                             st.error("⚠️ 모든 필수 항목을 입력해주세요.")
@@ -2340,7 +2372,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                         if 'selected_purchase_id' in st.session_state:
                             del st.session_state.selected_purchase_id
                         
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success("✅ 삭제 완료!")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
         else:
             st.info("등록된 생두 매입 데이터가 없습니다.")
@@ -2377,6 +2411,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             if product_to_edit != st.session_state.selected_product_for_edit:
                 st.session_state.selected_product_for_edit = product_to_edit
                 # 강제 리렌더링으로 새 값 로드
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택한 제품의 현재 배합비 조회
@@ -2468,7 +2503,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             
                             conn.commit()
                             conn.close()
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success(f"✅ {product_to_edit} 배합비 수정 완료! ({new_effective_date}부터 적용)")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()  # 🔧 수정: 페이지 자동 새로고침
                 
                 with col_delete:
@@ -2477,10 +2514,12 @@ elif menu == "✏️ 데이터 수정/삭제":
                         conn.execute("DELETE FROM blend_recipes WHERE product_name=?", (product_to_edit,))
                         conn.commit()
                         conn.close()
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success(f"✅ {product_to_edit} 배합비 삭제 완료!")
                         # session_state 초기화
                         if 'selected_product_for_edit' in st.session_state:
                             del st.session_state.selected_product_for_edit
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()  # 🔧 수정: 페이지 자동 새로고침
         else:
             st.info("등록된 배합비가 없습니다.")
@@ -2528,6 +2567,7 @@ elif menu == "✏️ 데이터 수정/삭제":
             # 선택이 변경되었는지 감지
             if selected_id != st.session_state.selected_sale_id:
                 st.session_state.selected_sale_id = selected_id
+                time.sleep(1)  # 메시지 표시
                 st.rerun()
             
             # 선택된 데이터 가져오기
@@ -2724,7 +2764,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                             conn.commit()
                             conn.close()
                             
+                            st.toast("✅ 수정 완료!", icon="✅")
                             st.success("✅ 수정 완료! (생두 재고 재계산됨)")
+                            time.sleep(1)  # 메시지 표시
                             st.rerun()
                         else:
                             st.error("⚠️ 모든 필수 항목을 입력해주세요.")
@@ -2773,7 +2815,9 @@ elif menu == "✏️ 데이터 수정/삭제":
                         if 'selected_sale_id' in st.session_state:
                             del st.session_state.selected_sale_id
                         
+                        st.toast("✅ 삭제 완료!", icon="✅")
                         st.success("✅ 삭제 완료! (생두 재고 복원됨)")
+                        time.sleep(1)  # 메시지 표시
                         st.rerun()
         else:
             st.info("등록된 판매 데이터가 없습니다.")
